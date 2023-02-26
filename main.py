@@ -1,6 +1,11 @@
 import io
+import json
+import logging
 import os
 import random
+import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import praw
 import pyimgur
@@ -10,146 +15,193 @@ from stability_sdk import client
 
 import keywords as k
 
-
-def get_prompt():
-    # Get a list of randomized keywords to be used for the prompt
-    selected_keywords = random.choices(k.KEYWORDS, k=random.randint(2, 4))
-    selected_keywords = ", ".join(selected_keywords)
-    # Ask user for the subject
-    subject = input("Subject: ")
-    print(f"Keywords Selected: {selected_keywords}")
-    # Create prompt
-    prompt = f"{subject}, {selected_keywords}"
-    return prompt, selected_keywords
+# CLASSES
 
 
-def sd_image(stability_api, prompt):
-    print("\nGenerating image...")
-    # Settings for image generation
-    answer = stability_api.generate(
-        prompt=prompt,
-        steps=35,
-        cfg_scale=9.5,
-        width=512,
-        height=512,
-        samples=1,
-        guidance_models="stable-diffusion-512-v2-1",
-    )
-    # Save image
-    for resp in answer:
-        for artifact in resp.artifacts:
-            if artifact.type == generation.ARTIFACT_IMAGE:
-                sd_img = Image.open(io.BytesIO(artifact.binary))
-                sd_img.save("sd_img.png")
-                print("Image generated!")
+class Prompt:
+    def __init__(self):
+        logging.info("Creating prompt...")
+        self.prompt = self.create_subject()
+        logging.info("Prompt created")
+        logging.info(f"Prompt: {self.prompt}")
+
+    def create_subject(self):
+        with open("prompts.txt", "r") as file:
+            first_line = file.readline()
+        with open("prompts.txt", "r") as file:
+            lines = file.readlines()
+        with open("prompts.txt", "w") as file:
+            file.writelines(lines[1:])
+        selected_keywords = random.choices(k.KEYWORDS, k=random.randint(2, 4))
+        selected_keywords = ", ".join(selected_keywords)
+        prompt = f"{first_line}, {selected_keywords}"
+        return prompt
 
 
-def imgur_link(prompt):
-    PATH = "sd_img.png"
-    img = pyimgur.Imgur(os.environ["IMGUR_CLIENT_ID"])
-    imgur_img = img.upload_image(PATH, title=prompt)
-    print(f"\nLink to image: {imgur_img.link}")
-    return imgur_img
+class Art:
+    def __init__(self, STABILITY_API, IMGUR_API, prompt):
+        logging.info("Creating art...")
+        self.STABILITY_API = STABILITY_API
+        self.IMGUR_API = IMGUR_API
+        self.prompt = prompt
+        while True:
+            try:
+                self.file = self.create()
+                self.imgur_link = self.create_imgur_link()
+                logging.info(f"Art created: {self.imgur_link}")
+                if self.confirm():
+                    logging.info("IMAGE CONFIRMED")
+                    break
+                else:
+                    logging.info("IMAGE REJECTED")
+                    continue
+            except Exception as e:
+                logging.error(e)
+                logging.error("Error creating art, shutting down...")
+                quit()
+
+    def create(self):
+        result = self.STABILITY_API.generate(
+            prompt=self.prompt,
+            steps=35,
+            cfg_scale=9.5,
+            width=512,
+            height=512,
+            samples=1,
+            guidance_models="stable-diffusion-512-v2-1",
+        )
+        for resp in result:
+            for artifact in resp.artifacts:
+                if artifact.type == generation.ARTIFACT_IMAGE:
+                    sd_img = Image.open(io.BytesIO(artifact.binary))
+                    sd_img.save("sd_img.png")
+
+    def create_imgur_link(self):
+        PATH = "sd_img.png"
+        image = self.IMGUR_API.upload_image(PATH, title=self.prompt)
+        return image.link
+
+    def confirm(self):
+        while True:
+            confirmation = input("CONFIRM IMAGE? [Y/n]: ")
+            if confirmation in ["Y", "n"]:
+                if confirmation == "Y":
+                    return True
+                else:
+                    return False
 
 
-def post(reddit_api, prompt, sd_image_url):
-    while True:
-        # Ask the user if they want to post the image
-        confirmation = input("\nWould you like to post the image? [Y/n]: ")
-        if confirmation in ["Y", "n"]:
-            if confirmation == "Y":
-                print("\nPosting...")
-                # Post generated image to r/diffusedgallery
-                reddit_api.subreddit("diffusedgallery").submit(
-                    title=prompt,
-                    flair_id="89263ac6-b0ff-11ed-a9d7-a2ed7812b990",
-                    url=sd_image_url.link,
+class Post(ABC):
+    @abstractmethod
+    def send(self):
+        pass
+
+
+class RedditPost(Post):
+    def __init__(self, REDDIT_API, title, imgur_link):
+        self.REDDIT_API = REDDIT_API
+        self.title = title
+        self.imgur_link = imgur_link
+
+    def send(self):
+        logging.info("Posting to Reddit...")
+        while True:
+            try:
+                self.REDDIT_API.subreddit("diffusedgallery").submit(
+                    title=self.title,
+                    flair_id=os.environ["REDDIT_FLAIR_ID"],
+                    url=self.imgur_link,
                 )
-                for submission in reddit_api.redditor("diffusedbrush").new(
+                for submission in self.REDDIT_API.redditor("diffusedbrush").new(
                     limit=1
                 ):
-                    print("Posted!")
-                    print(
-                        f"View it here: https://www.reddit.com/r/diffusedgallery/comments/{submission}/"
+                    logging.info(
+                        f"Posted to Reddit: http://redd.it/{submission}/"
                     )
-            break
-        else:
-            print("ERROR: Please enter a valid input!")
+                    logging.info("Sleeping for 15 seconds to auto verify...")
+                    time.sleep(15)
+                    submission.mod.approve()
+
+                break
+            except Exception as e:
+                logging.error(e)
+                logging.error("Error posting to Reddit, shutting down...")
+                quit()
+
+    def verify(self):
+        pass
 
 
-def store_submissions(post):
-    suggestions = post
-    for comment in suggestions.comments:
-        for reply in comment.replies:
-            if (reply.is_submitter) and ("IMAGE POSTED" == reply.body):
-                print("test")
-    for comment in suggestions.comments:
-        for reply in comment.replies:
-            if (reply.is_submitter) and ("PROMPT SELECTED" == reply.body):
-                print("test")
+class InstaPost(Post):
+    def __init__(self, prompt):
+        self.prompt = prompt
+
+    def send(self):
+        pass
+
+
+@dataclass
+class Submission:
+    prompt: str
+    comment_link: str
+
+
+class StoreSubmissions:
+    def __init__(self, REDDIT_API):
+        self.REDDIT_API = REDDIT_API
+        self.submissions = self.find_new()
+
+    def find_new(self):
+        logging.info("Storing submissions...")
+        source = self.REDDIT_API.submission("1167iaj")
+        for comment in source.comments:
+            if "PROMPT: " not in comment.body:
+                continue
+            valid_prompt = True
+            for reply in comment.replies:
+                if (reply.is_submitter) and ("IMAGE POSTED" == reply.body):
+                    valid_prompt = False
+            if valid_prompt:
+                with open("prompts.txt", "a") as f:
+                    f.write(comment.body.replace("PROMPT: ", "") + "\n")
+        logging.info("Submissions stored")
+
+    def store(self):
+        pass
 
 
 def main():
-    # Connect to Stability.ai
-    stability_api = client.StabilityInference(
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        force=True,
+    )
+    logging.info("STARTING BOT")
+    STABILITY_API = client.StabilityInference(
         key=os.environ["STABILITY_KEY"],
-        verbose=True,
         engine="stable-diffusion-v1-5",
     )
-    # Connect to Reddit diffusedbrush app
-    reddit_api = praw.Reddit(
+    logging.info("Stability API connected")
+    REDDIT_API = praw.Reddit(
         client_id=os.environ["REDDIT_CLIENT_ID"],
         client_secret=os.environ["REDDIT_CLIENT_SECRET"],
         password=os.environ["REDDIT_PASSWORD"],
         user_agent="bot by u/diffusedbrush",
         username="diffusedbrush",
     )
+    logging.info("Reddit API connected")
+    IMGUR_API = pyimgur.Imgur(os.environ["IMGUR_CLIENT_ID"])
+    logging.info("Imgur API connected")
 
-    # store_submissions(reddit_api.submission("1167iaj"))
-    exit(1)
+    StoreSubmissions(REDDIT_API)
+    # prompt = Prompt().prompt
+    # art = Art(STABILITY_API, IMGUR_API, prompt)
+    # imgur_link = art.imgur_link
+    # RedditPost(REDDIT_API, prompt, imgur_link).send()
+    # logging.info("ENDING BOT")
 
-    # Ask user for prompts and keywords
-    prompt, used_keywords = get_prompt()
 
-    # Generate image using prompt
-    sd_image(stability_api, prompt)
-
-    # Upload generated image to Imgur
-    sd_image_url = imgur_link(prompt)
-
-    # Post to r/diffusedgallery
-    post(reddit_api, prompt, sd_image_url)
-    """
-    TODO:
-
-    migrate to oop and classes
-        image
-        prompt
-        comment
-        post
-
-    approve posts after set time
-
-    store prompts in a file
-        reply to comment when prompt is used with link to post
-        delete prompt from file
-
-    use prompts from file to generate images
-        leave comment on post to creator of prompt and their username
-
-    github actions
-        automatic and through discussions/comments
-
-    mirgrate to numpy randomness, no duplicate keywords
-
-    improve randomness of keywords for better looking images
-
-    also post the image to instagram diffusedbrush
-
-    use ai to generate improved prompts
-
-    github docs
-    """
+# MAIN
 
 
 if __name__ == "__main__":

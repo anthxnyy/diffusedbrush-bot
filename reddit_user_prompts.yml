@@ -3,7 +3,7 @@ description: "Checks the Prompt Suggestions thread on r/diffusedbrush and stores
 
 on:
   schedule:
-    - cron: "00 12,16 * * *"
+    - cron: "00 12,16,20 * * *"
 
 jobs:
   build:
@@ -15,7 +15,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
       - name: Install Python Packages
         run: |
