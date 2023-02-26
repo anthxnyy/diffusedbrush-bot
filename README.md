@@ -19,3 +19,5 @@ TODO:
 6. Post to Instagram
 7. Implement AI to generate prompts/improve upon user prompts
 8. Documentation
+9. Function where users can ping the bot with a prompt, reply with link to image in subreddit
+10. Function where users can message the bot with a prompt, reply with link to image in subreddit
