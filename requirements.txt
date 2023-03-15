@@ -1,4 +1,4 @@
 Pillow==9.4.0
-praw==7.6.1
+praw==7.7.0
 pyimgur==0.6.0
 stability_sdk==0.3.2

@@ -15,6 +15,7 @@ from stability_sdk import client
 
 import keywords as k
 
+
 # CLASSES
 
 
@@ -25,17 +26,21 @@ class Prompt:
         logging.info("Prompt created")
         logging.info(f"Prompt: {self.prompt}")
 
-    def create_subject(self):
+    @staticmethod
+    def create_subject():
         with open("prompts.txt", "r") as file:
             first_line = file.readline()
-        with open("prompts.txt", "r") as file:
-            lines = file.readlines()
-        with open("prompts.txt", "w") as file:
-            file.writelines(lines[1:])
         selected_keywords = random.choices(k.KEYWORDS, k=random.randint(2, 4))
         selected_keywords = ", ".join(selected_keywords)
         prompt = f"{first_line}, {selected_keywords}"
         return prompt
+
+    @staticmethod
+    def remove_subject():
+        with open("prompts.txt", "r") as file:
+            lines = file.readlines()
+        with open("prompts.txt", "w") as file:
+            file.writelines(lines[1:])
 
 
 class Art:
@@ -54,6 +59,7 @@ class Art:
                     break
                 else:
                     logging.info("IMAGE REJECTED")
+                    logging.info("Creating new art...")
                     continue
             except Exception as e:
                 logging.error(e)
@@ -64,7 +70,7 @@ class Art:
         result = self.STABILITY_API.generate(
             prompt=self.prompt,
             steps=35,
-            cfg_scale=9.5,
+            cfg_scale=10,
             width=512,
             height=512,
             samples=1,
@@ -81,7 +87,8 @@ class Art:
         image = self.IMGUR_API.upload_image(PATH, title=self.prompt)
         return image.link
 
-    def confirm(self):
+    @staticmethod
+    def confirm():
         while True:
             confirmation = input("CONFIRM IMAGE? [Y/n]: ")
             if confirmation in ["Y", "n"]:
@@ -112,24 +119,24 @@ class RedditPost(Post):
                     flair_id=os.environ["REDDIT_FLAIR_ID"],
                     url=self.imgur_link,
                 )
-                for submission in self.REDDIT_API.redditor("diffusedbrush").new(
+                for post in self.REDDIT_API.redditor("diffusedbrush").new(
                     limit=1
                 ):
-                    logging.info(
-                        f"Posted to Reddit: http://redd.it/{submission}/"
-                    )
-                    logging.info("Sleeping for 15 seconds to auto verify...")
-                    time.sleep(15)
-                    submission.mod.approve()
-
+                    logging.info(f"Posted to Reddit: http://redd.it/{post}/")
+                    self.approve(post)
+                    Prompt.remove_subject()
                 break
             except Exception as e:
                 logging.error(e)
                 logging.error("Error posting to Reddit, shutting down...")
                 quit()
 
-    def verify(self):
-        pass
+    @staticmethod
+    def approve(post):
+        logging.info("Sleeping for 10 seconds to approve post...")
+        time.sleep(10)
+        post.mod.approve()
+        logging.info("Post approved")
 
 
 class InstaPost(Post):
@@ -144,16 +151,20 @@ class InstaPost(Post):
 class Submission:
     prompt: str
     comment_link: str
+    comment_link = str
+    time_created = str
+    permalink = str
 
 
 class StoreSubmissions:
     def __init__(self, REDDIT_API):
         self.REDDIT_API = REDDIT_API
-        self.submissions = self.find_new()
+        self.submissions = self.gather_submissions()
 
-    def find_new(self):
+    def gather_submissions(self):
         logging.info("Storing submissions...")
         source = self.REDDIT_API.submission("1167iaj")
+        valid_submissions = {}
         for comment in source.comments:
             if "PROMPT: " not in comment.body:
                 continue
@@ -162,12 +173,21 @@ class StoreSubmissions:
                 if (reply.is_submitter) and ("IMAGE POSTED" == reply.body):
                     valid_prompt = False
             if valid_prompt:
-                with open("prompts.txt", "a") as f:
-                    f.write(comment.body.replace("PROMPT: ", "") + "\n")
+                valid_submissions.append(
+                    Submission(
+                        prompt=comment.body.replace("PROMPT: ", ""),
+                        author=comment.author.name,
+                        comment_link=f"http://redd.it/{comment.id}",
+                        time_created=comment.created_utc,
+                        permalink=comment.permalink,
+                    )
+                )
         logging.info("Submissions stored")
 
-    def store(self):
-        pass
+    @staticmethod
+    def store():
+        with open("prompts.txt", "a") as f:
+            f.write(comment.body.replace("PROMPT: ", "") + "\n")
 
 
 def main():
