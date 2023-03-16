@@ -17,6 +17,6 @@ TODO:
 - [ ] Comment engine settings, author name, and original prompt link on post after art is created
 - [ ] Implement CLI for GitHub Actions
 - [ ] Automate using GitHub Actions
+- [ ] Create GitHub Action that uses the bot after a Discussion post submission is made
 - [ ] Write documentation and comments
-- [ ] Implement way to use bot instantly?
 - [ ] Post to Instagram
