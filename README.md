@@ -19,6 +19,7 @@ TODO:
 - [ ] Change `keywords.py` to use a json file
 - [ ] Implement CLI for GitHub Actions
 - [ ] Automate using GitHub Actions
+- [ ] Create GitHub Action that uses the bot after a Discussion post submission is made
 - [ ] Write documentation and comments
 - [ ] Implement way to use bot instantly? Discussions?
 - [ ] Post to Instagram
