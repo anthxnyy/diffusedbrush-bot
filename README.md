@@ -11,13 +11,12 @@ WIP
 
 TODO:
 
-1. Store prompts in a file (json?)
-2. Reply to prompt creator comment when prompt is used to post, delete prompt from file
-3. Give credits to prompt creator after prompt is used
-4. Automate using GitHub Actions
-5. Improve keyword generation, disable keywords based on past chosen keywords, no duplicates
-6. Post to Instagram
-7. Implement AI to generate prompts/improve upon user prompts
-8. Documentation
-9. Function where users can ping the bot with a prompt, reply with link to image in subreddit
-10. Function where users can message the bot with a prompt, reply with link to image in subreddit
+1. ~~Store prompts in a json file~~
+2. ~~Reply to prompt creator when prompt is used to post, delete prompt from file~~
+3. Revamp `Art` and `Post` classes
+4. Comment engine settings, author name, and original prompt link on post after art is created
+5. Implement CLI for GitHub Actions
+6. Automate using GitHub Actions
+7. Write documentation and comments
+8. Implement way to use prompt instantly?
+9. Post to Instagram
