@@ -11,12 +11,12 @@ WIP
 
 TODO:
 
-1. ~~Store prompts in a json file~~
-2. ~~Reply to prompt creator when prompt is used to post, delete prompt from file~~
-3. Revamp `Art` and `Post` classes
-4. Comment engine settings, author name, and original prompt link on post after art is created
-5. Implement CLI for GitHub Actions
-6. Automate using GitHub Actions
-7. Write documentation and comments
-8. Implement way to use prompt instantly?
-9. Post to Instagram
+- [x] Store prompts in a json file
+- [x] Reply to prompt creator when prompt is used to post, delete prompt from file
+- [ ] Revamp `Art` and `Post` classes
+- [ ] Comment engine settings, author name, and original prompt link on post after art is created
+- [ ] Implement CLI for GitHub Actions
+- [ ] Automate using GitHub Actions
+- [ ] Write documentation and comments
+- [ ] Implement way to use bot instantly?
+- [ ] Post to Instagram
