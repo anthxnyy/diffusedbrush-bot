@@ -13,10 +13,15 @@ TODO:
 
 - [x] Store prompts in a json file
 - [x] Reply to prompt creator when prompt is used to post, delete prompt from file
-- [ ] Revamp `Art` and `Post` classes
-- [ ] Comment engine settings, author name, and original prompt link on post after art is created
+- [x] Reddit post: Comment engine settings, author name, and original prompt link on post after art is created
+- [x] Reddit post: Notify prompt creator when art is posted
+- [ ] Create logging messages for new and modified methods
+- [ ] Change `keywords.py` to use a json file
 - [ ] Implement CLI for GitHub Actions
 - [ ] Automate using GitHub Actions
 - [ ] Write documentation and comments
-- [ ] Implement way to use bot instantly?
+- [ ] Implement way to use bot instantly? Discussions?
 - [ ] Post to Instagram
+- [ ] Get trending topics to be used as subjects
+- [ ] Use ChatGPT to generate prompts?
+- [ ] Improve use of keywords

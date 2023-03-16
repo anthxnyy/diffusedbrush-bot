@@ -50,29 +50,36 @@ class RedditSubmissions(ManageSubmissions):
         self.REDDIT_API = REDDIT_API
         self.submissions = self.gather_submissions()
         self.store_submissions()
-        # self.notify_submitters()
+        self.notify_submitters()
 
     def gather_submissions(self):
         logging.info("Gathering Reddit submissions...")
         valid_submissions = []
+        valid_comment = True
         submission_source = self.REDDIT_API.submission("1167iaj")
         for comment in submission_source.comments:
             if "SUBJECT: " in comment.body:
                 for reply in comment.replies:
-                    if (reply.is_submitter) and (
-                        ("IMAGE POSTED" == reply.body)
-                        or ("SUBJECT ACCEPTED" == reply.body)
+                    if (("IMAGE POSTED: ") in reply.body) or (
+                        ("SUBJECT ACCEPTED") in reply.body
                     ):
-                        continue
-                valid_submissions.append(
-                    Submission(
-                        author=comment.author.name,
-                        subject=comment.body.replace("SUBJECT: ", "").strip(),
-                        link=f"https://reddit.com{comment.permalink}",
-                        created_utc=comment.created_utc,
+                        valid_comment = False
+                if valid_comment:
+                    valid_submissions.append(
+                        Submission(
+                            author=comment.author.name,
+                            subject=comment.body.replace(
+                                "SUBJECT: ", ""
+                            ).strip(),
+                            link=f"https://reddit.com{comment.permalink}",
+                            created_utc=comment.created_utc,
+                        )
                     )
-                )
         logging.info(f"New submissions found: {len(valid_submissions)}")
+        for i in range(len(valid_submissions)):
+            logging.info(
+                f"Submission {i + 1} of {len(valid_submissions)}: {valid_submissions[i].subject}"  # noqa: E501
+            )
         return valid_submissions
 
     def store_submissions(self):
@@ -88,7 +95,7 @@ class RedditSubmissions(ManageSubmissions):
                 updated_file.append(
                     {
                         "author": new_submission.author,
-                        "subject": new_submission.subject,
+                        "subject": new_submission.subject.strip(),
                         "link": new_submission.link,
                         "created_utc": new_submission.created_utc,
                     }
@@ -101,25 +108,22 @@ class RedditSubmissions(ManageSubmissions):
         logging.info("New submissions stored")
 
     def notify_submitters(self):
-        logging.info("Replying to sources of new Reddit submissions...")
+        logging.info("Replying to submitters of new Reddit submissions...")
         submission_links = [
             self.submissions[i].link for i in range(len(self.submissions))
         ]
         for i in submission_links:
             submission = self.REDDIT_API.comment(url=i)
             submission.reply("SUBJECT ACCEPTED")
-        logging.info("Replied to sources of new Reddit submissions")
+        logging.info("Replied to submitters of new Reddit submissions")
 
     @staticmethod
-    def remove_submission(selected_submission):
+    def remove_submission():
         logging.info("Removing selected submission from Reddit submissions...")
         with open("reddit_submissions.json", "r") as old_file:
             updated_file = json.load(old_file)
         with open("reddit_submissions.json", "w") as old_file:
-            for i in range(len(updated_file)):
-                if updated_file[i]["link"] == selected_submission:
-                    del updated_file[i]
-                    break
+            del updated_file[0]
             json.dump(updated_file, old_file, indent=2)
         logging.info("Removed selected submission from Reddit submissions")
 
@@ -127,7 +131,7 @@ class RedditSubmissions(ManageSubmissions):
 class Prompt:
     def __init__(self):
         self.source, self.file_source = self.get_source()
-        self.subject = self.get_subject()
+        self.author, self.subject, self.link = self.prompt_info()
         self.keywords = self.generate_keywords()
         self.text = f"{self.subject}, {self.keywords}"
         logging.info(f"Prompt generated: {self.text}")
@@ -139,25 +143,18 @@ class Prompt:
         logging.info(f"Source selected: {source}")
         return source, file
 
-    def get_subject(self):
-        subject = ""
-        subject_link = ""
+    def prompt_info(self):
         if self.source == "Reddit":
             logging.info(f"Getting subject from {self.file_source} ...")
-            with open(self.file_source, "r") as file:
-                submissions = json.load(file)
+            with open(self.file_source, "r") as old_file:
+                submissions = json.load(old_file)
+            author = submissions[0]["author"]
             subject = submissions[0]["subject"]
             subject_link = submissions[0]["link"]
-            del submissions[0]
-            with open(self.file_source, "w") as file:
-                json.dump(submissions, file, indent=2)
+            with open(self.file_source, "w") as old_file:
+                json.dump(submissions, old_file, indent=2)
         logging.info(f"Subject selected: {subject}")
-        self.remove_subject(subject_link)
-        return subject
-
-    def remove_subject(self, link):
-        if self.source == "Reddit":
-            RedditSubmissions.remove_submission(link)
+        return author, subject, subject_link
 
     def generate_keywords(self):
         logging.info("Generating keywords...")
@@ -173,26 +170,18 @@ class Art:
         self.STABILITY_API = STABILITY_API
         self.IMGUR_API = IMGUR_API
         self.prompt = prompt
-        while True:
-            try:
-                self.file = self.create()
-                self.imgur_link = self.create_imgur_link()
-                logging.info(f"Art created: {self.imgur_link}")
-                if self.confirm():
-                    logging.info("IMAGE CONFIRMED")
-                    break
-                else:
-                    logging.info("IMAGE REJECTED")
-                    logging.info("Creating new art...")
-                    continue
-            except Exception as e:
-                logging.error(e)
-                logging.error("Error creating art, shutting down...")
-                quit()
+        try:
+            self.file = self.generate_art()
+            self.imgur_link = self.create_imgur()
+            logging.info(f"Art created: {self.imgur_link}")
+        except Exception as e:
+            logging.error(e)
+            logging.error("Error creating art, shutting down...")
+            quit()
 
-    def create(self):
+    def generate_art(self):
         result = self.STABILITY_API.generate(
-            prompt=self.prompt,
+            prompt=self.prompt.text,
             steps=35,
             cfg_scale=10,
             width=512,
@@ -205,61 +194,76 @@ class Art:
                     sd_img = Image.open(io.BytesIO(artifact.binary))
                     sd_img.save("sd_img.png")
 
-    def create_imgur_link(self):
+    def create_imgur(self):
         PATH = "sd_img.png"
-        image = self.IMGUR_API.upload_image(PATH, title=self.prompt)
+        image = self.IMGUR_API.upload_image(PATH, title=self.prompt.text)
         return image.link
 
-    @staticmethod
-    def confirm():
-        while True:
-            confirmation = input("CONFIRM IMAGE? [Y/n]: ")
-            if confirmation in ["Y", "n"]:
-                if confirmation == "Y":
-                    return True
-                else:
-                    return False
 
-
-class Post(ABC):
+class ManagePost(ABC):
     @abstractmethod
     def send(self):
         pass
 
 
-class RedditPost(Post):
-    def __init__(self, REDDIT_API, title, imgur_link):
+class RedditPost(ManagePost):
+    def __init__(self, REDDIT_API, prompt, art):
         self.REDDIT_API = REDDIT_API
-        self.title = title
-        self.imgur_link = imgur_link
+        self.prompt = prompt
+        self.imgur_link = art.imgur_link
+        self.post_link = str
 
     def send(self):
         logging.info("Posting to Reddit...")
-        while True:
-            try:
-                self.REDDIT_API.subreddit("diffusedgallery").submit(
-                    title=self.title,
-                    flair_id=os.environ["REDDIT_FLAIR_ID"],
-                    url=self.imgur_link,
-                )
-                for post in self.REDDIT_API.redditor("diffusedbrush").new(
-                    limit=1
-                ):
-                    logging.info(f"Posted to Reddit: http://redd.it/{post}/")
-                    self.approve(post)
-                    Prompt.remove_subject()
-                break
-            except Exception as e:
-                logging.error(e)
-                logging.error("Error posting to Reddit, shutting down...")
-                quit()
+        try:
+            self.REDDIT_API.subreddit("diffusedgallery").submit(
+                title=self.prompt.text,
+                flair_id=os.environ["REDDIT_FLAIR_ID"],
+                url=self.imgur_link,
+            )
+            for post in self.REDDIT_API.redditor("diffusedbrush").new(limit=1):
+                self.post_link = post
+            logging.info(f"Posted to Reddit: http://redd.it/{self.post_link}/")
+            self.comment()
+            self.approve()
+            self.delete_subject()
+            self.notify_author()
+        except Exception as e:
+            logging.error(e)
+            logging.error("Error posting to Reddit, shutting down...")
+            quit()
 
-    @staticmethod
-    def approve(post):
-        logging.info("Sleeping for 10 seconds to approve post...")
+    def comment(self):
+        logging.info("Commenting information on post...")
+        text = [
+            f"**Author:** u/{self.prompt.author}\n\n",
+            f"**Original Submission:** {self.prompt.link}\n\n",
+            "**Stable Diffusion Engine Settings:** \n\n",
+            "* Engine: stable-diffusion-512-v2-1\n",
+            "* Steps: 35\n",
+            "* CFG Scale: 10\n",
+            "* Width: 512\n",
+            "* Height: 512\n",
+        ]
+        text = "".join(text)
+        self.post_link.reply(text)
+        logging.info("Commented information on post")
+
+    def approve(self):
+        logging.info("Approving post, sleeping for 10 seconds...")
         time.sleep(10)
-        post.mod.approve()
+        self.post_link.mod.approve()
         logging.info("Post approved")
+
+    def notify_author(self):
+        logging.info("Notifying author of subject use...")
+        submission = self.REDDIT_API.comment(url=self.prompt.link)
+        submission.reply(f"IMAGE POSTED: http://redd.it/{self.post_link}/")
+        logging.info(f"Original author submission: {self.prompt.link}")
+        logging.info("Notified author of subject use")
+
+    def delete_subject(self):
+        RedditSubmissions.remove_submission()
 
 
 def main():
@@ -273,7 +277,7 @@ def main():
     try:
         STABILITY_API = client.StabilityInference(
             key=os.environ["STABILITY_KEY"],
-            engine="stable-diffusion-v1-5",
+            engine="stable-diffusion-512-v2-1",
         )
         logging.info("Stability API connected")
         REDDIT_API = praw.Reddit(
@@ -292,11 +296,13 @@ def main():
         quit()
 
     RedditSubmissions(REDDIT_API)
-    prompt = Prompt()
-    # art = Art(STABILITY_API, IMGUR_API, prompt)
-    # imgur_link = art.imgur_link
-    # RedditPost(REDDIT_API, prompt, imgur_link).send()
-    # logging.info("ENDING BOT")
+    selected_prompt = Prompt()
+    generated_art = Art(STABILITY_API, IMGUR_API, selected_prompt)
+    new_post = RedditPost(REDDIT_API, selected_prompt, generated_art)
+    new_post.send()
+    """
+    """
+    logging.info("BOT COMPLETED TASKS SUCCESSFULLY")
 
 
 # MAIN
