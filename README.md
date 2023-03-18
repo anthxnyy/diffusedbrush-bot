@@ -15,14 +15,16 @@ TODO:
 - [x] Reply to prompt creator when prompt is used to post, delete prompt from file
 - [x] Reddit post: Comment engine settings, author name, and original prompt link on post after art is created
 - [x] Reddit post: Notify prompt creator when art is posted
-- [ ] Create logging messages for new and modified methods
 - [ ] Change `keywords.py` to use a json file
+- [ ] Store submission confirmation in a json file
+- [ ] Delete submission confirmation when post is made using subject
+- [ ] Feature that detects if post has been deleted, notify subject creator
+- [ ] Add safety filter
 - [ ] Implement CLI for GitHub Actions
 - [ ] Automate using GitHub Actions
 - [ ] Create GitHub Action that uses the bot after a Discussion post submission is made
 - [ ] Write documentation and comments
-- [ ] Implement way to use bot instantly? Discussions?
-- [ ] Post to Instagram
 - [ ] Get trending topics to be used as subjects
 - [ ] Use ChatGPT to generate prompts?
 - [ ] Improve use of keywords
+- [ ] Move from Stability API to ??? with better engine control and features

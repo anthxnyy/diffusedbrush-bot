@@ -46,13 +46,13 @@ class ManageSubmissions(ABC):
 
 
 class RedditSubmissions(ManageSubmissions):
-    def __init__(self, REDDIT_API):
+    def __init__(self, REDDIT_API: praw.Reddit) -> None:
         self.REDDIT_API = REDDIT_API
         self.submissions = self.gather_submissions()
         self.store_submissions()
         self.notify_submitters()
 
-    def gather_submissions(self):
+    def gather_submissions(self) -> list[Submission]:
         logging.info("Gathering Reddit submissions...")
         valid_submissions = []
         valid_comment = True
@@ -75,14 +75,17 @@ class RedditSubmissions(ManageSubmissions):
                             created_utc=comment.created_utc,
                         )
                     )
-        logging.info(f"New submissions found: {len(valid_submissions)}")
-        for i in range(len(valid_submissions)):
-            logging.info(
-                f"Submission {i + 1} of {len(valid_submissions)}: {valid_submissions[i].subject}"  # noqa: E501
-            )
+        if len(valid_submissions) == 0:
+            logging.info("No new submissions found")
+        else:
+            logging.info(f"New submissions found: {len(valid_submissions)}")
+            for i in range(len(valid_submissions)):
+                logging.info(
+                    f"Submission {i + 1} of {len(valid_submissions)}: {valid_submissions[i].subject}"  # noqa: E501
+                )
         return valid_submissions
 
-    def store_submissions(self):
+    def store_submissions(self) -> None:
         logging.info("Storing new Reddit submissions...")
         with open("reddit_submissions.json", "r") as old_file:
             updated_file = json.load(old_file)
@@ -107,7 +110,7 @@ class RedditSubmissions(ManageSubmissions):
             json.dump(updated_file, old_file, indent=2)
         logging.info("New submissions stored")
 
-    def notify_submitters(self):
+    def notify_submitters(self) -> None:
         logging.info("Replying to submitters of new Reddit submissions...")
         submission_links = [
             self.submissions[i].link for i in range(len(self.submissions))
@@ -118,7 +121,7 @@ class RedditSubmissions(ManageSubmissions):
         logging.info("Replied to submitters of new Reddit submissions")
 
     @staticmethod
-    def remove_submission():
+    def remove_submission() -> None:
         logging.info("Removing selected submission from Reddit submissions...")
         with open("reddit_submissions.json", "r") as old_file:
             updated_file = json.load(old_file)
@@ -129,21 +132,21 @@ class RedditSubmissions(ManageSubmissions):
 
 
 class Prompt:
-    def __init__(self):
+    def __init__(self) -> None:
         self.source, self.file_source = self.get_source()
         self.author, self.subject, self.link = self.prompt_info()
         self.keywords = self.generate_keywords()
         self.text = f"{self.subject}, {self.keywords}"
         logging.info(f"Prompt generated: {self.text}")
 
-    def get_source(self):
+    def get_source(self) -> tuple[str, str]:
         logging.info("Getting source of subject...")
-        source = "Reddit"
+        platform = "Reddit"
         file = "reddit_submissions.json"
-        logging.info(f"Source selected: {source}")
-        return source, file
+        logging.info(f"Source selected: {platform}")
+        return platform, file
 
-    def prompt_info(self):
+    def prompt_info(self) -> tuple[str, str, str]:
         if self.source == "Reddit":
             logging.info(f"Getting subject from {self.file_source} ...")
             with open(self.file_source, "r") as old_file:
@@ -156,7 +159,7 @@ class Prompt:
         logging.info(f"Subject selected: {subject}")
         return author, subject, subject_link
 
-    def generate_keywords(self):
+    def generate_keywords(self) -> str:
         logging.info("Generating keywords...")
         selected_keywords = random.choices(k.KEYWORDS, k=random.randint(2, 4))
         selected_keywords = ", ".join(selected_keywords)
@@ -165,36 +168,40 @@ class Prompt:
 
 
 class Art:
-    def __init__(self, STABILITY_API, IMGUR_API, prompt):
-        logging.info("Creating art...")
+    def __init__(
+        self, STABILITY_API: object, IMGUR_API: object, prompt: Prompt
+    ) -> None:
         self.STABILITY_API = STABILITY_API
         self.IMGUR_API = IMGUR_API
         self.prompt = prompt
+        self.file = self.generate_art()
+        logging.info("Art created, creating Imgur link...")
+        self.imgur_link = self.create_imgur()
+        logging.info(f"Imgur link created: {self.imgur_link}")
+
+    def generate_art(self) -> None:
+        logging.info("Creating art...")
         try:
-            self.file = self.generate_art()
-            self.imgur_link = self.create_imgur()
-            logging.info(f"Art created: {self.imgur_link}")
+            result = self.STABILITY_API.generate(
+                prompt=self.prompt.text,
+                steps=35,
+                cfg_scale=10,
+                width=512,
+                height=512,
+                samples=1,
+                guidance_preset=generation.GUIDANCE_PRESET_FAST_GREEN,
+            )
         except Exception as e:
             logging.error(e)
             logging.error("Error creating art, shutting down...")
             quit()
-
-    def generate_art(self):
-        result = self.STABILITY_API.generate(
-            prompt=self.prompt.text,
-            steps=35,
-            cfg_scale=10,
-            width=512,
-            height=512,
-            samples=1,
-        )
         for resp in result:
             for artifact in resp.artifacts:
                 if artifact.type == generation.ARTIFACT_IMAGE:
                     sd_img = Image.open(io.BytesIO(artifact.binary))
                     sd_img.save("sd_img.png")
 
-    def create_imgur(self):
+    def create_imgur(self) -> str:
         PATH = "sd_img.png"
         image = self.IMGUR_API.upload_image(PATH, title=self.prompt.text)
         return image.link
@@ -207,13 +214,13 @@ class ManagePost(ABC):
 
 
 class RedditPost(ManagePost):
-    def __init__(self, REDDIT_API, prompt, art):
+    def __init__(self, REDDIT_API: object, prompt: Prompt, art: Art) -> None:
         self.REDDIT_API = REDDIT_API
         self.prompt = prompt
         self.imgur_link = art.imgur_link
         self.post_link = str
 
-    def send(self):
+    def send(self) -> None:
         logging.info("Posting to Reddit...")
         try:
             self.REDDIT_API.subreddit("diffusedgallery").submit(
@@ -233,10 +240,10 @@ class RedditPost(ManagePost):
             logging.error("Error posting to Reddit, shutting down...")
             quit()
 
-    def comment(self):
+    def comment(self) -> None:
         logging.info("Commenting information on post...")
         text = [
-            f"**Author:** u/{self.prompt.author}\n\n",
+            f"**Idea By:** u/{self.prompt.author}\n\n",
             f"**Original Submission:** {self.prompt.link}\n\n",
             "**Stable Diffusion Engine Settings:** \n\n",
             "* Engine: stable-diffusion-512-v2-1\n",
@@ -244,25 +251,26 @@ class RedditPost(ManagePost):
             "* CFG Scale: 10\n",
             "* Width: 512\n",
             "* Height: 512\n",
+            "* CLIP Guidance: Enabled\n",
         ]
         text = "".join(text)
         self.post_link.reply(text)
         logging.info("Commented information on post")
 
-    def approve(self):
+    def approve(self) -> None:
         logging.info("Approving post, sleeping for 10 seconds...")
         time.sleep(10)
         self.post_link.mod.approve()
         logging.info("Post approved")
 
-    def notify_author(self):
+    def notify_author(self) -> None:
         logging.info("Notifying author of subject use...")
         submission = self.REDDIT_API.comment(url=self.prompt.link)
         submission.reply(f"IMAGE POSTED: http://redd.it/{self.post_link}/")
         logging.info(f"Original author submission: {self.prompt.link}")
         logging.info("Notified author of subject use")
 
-    def delete_subject(self):
+    def delete_subject(self) -> None:
         RedditSubmissions.remove_submission()
 
 
