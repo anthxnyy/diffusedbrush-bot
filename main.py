@@ -4,7 +4,6 @@ import logging
 import os
 import random
 import time
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import praw
@@ -12,9 +11,6 @@ import pyimgur
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 from PIL import Image
 from stability_sdk import client
-
-import keywords as k
-
 
 # CLASSES
 
@@ -27,51 +23,55 @@ class Submission:
     created_utc: str
 
 
-class ManageSubmissions(ABC):
-    @abstractmethod
-    def gather_submissions(self):
-        pass
-
-    @abstractmethod
-    def store_submissions(self):
-        pass
-
-    @abstractmethod
-    def notify_submitters(self):
-        pass
-
-    @abstractmethod
-    def remove_submission(self):
-        pass
-
-
-class RedditSubmissions(ManageSubmissions):
+class ManageSubmissions:
     def __init__(self, REDDIT_API: praw.Reddit) -> None:
         self.REDDIT_API = REDDIT_API
-        self.submissions = self.gather_submissions()
-        self.store_submissions()
-        self.notify_submitters()
+        self.handle_deleted_submissions()
+        self.new_submissions = self.gather_submissions()
+        if len(self.new_submissions) > 0:
+            self.store_submissions()
+            self.notify_submitters()
+        self.verify_submissions()
+
+    def handle_deleted_submissions(self) -> None:
+        logging.info("Handling deleted submissions...")
+        with open("reddit_submissions.json", "r") as file:
+            updated_file = json.load(file)
+        with open("reddit_submissions.json", "w") as old_file:
+            for submission in updated_file:
+                if (
+                    self.REDDIT_API.comment(url=submission["link"]).author
+                    is None
+                ) and ():
+                    continue
+                else:
+                    updated_file.append(submission)
+            json.dump(updated_file, old_file, indent=2)
+        logging.info("Handled deleted submissions")
 
     def gather_submissions(self) -> list[Submission]:
         logging.info("Gathering Reddit submissions...")
         valid_submissions = []
         valid_comment = True
+        subject_confirmation = False
         submission_source = self.REDDIT_API.submission("1167iaj")
         for comment in submission_source.comments:
             if "SUBJECT: " in comment.body:
                 for reply in comment.replies:
-                    if (("IMAGE POSTED: ") in reply.body) or (
-                        ("SUBJECT ACCEPTED") in reply.body
-                    ):
+                    if "SUBJECT ACCEPTED" in reply.body:
+                        save_confirmation = reply.permalink
+                        subject_confirmation = True
+                    if "IMAGE POSTED: " in reply.body:
                         valid_comment = False
-                if valid_comment:
+                if valid_comment and subject_confirmation:
                     valid_submissions.append(
                         Submission(
                             author=comment.author.name,
                             subject=comment.body.replace(
                                 "SUBJECT: ", ""
                             ).strip(),
-                            link=f"https://reddit.com{comment.permalink}",
+                            origin=f"https://reddit.com{comment.permalink}",
+                            confirmation=f"https://reddit.com{save_confirmation}",  # noqa: E501
                             created_utc=comment.created_utc,
                         )
                     )
@@ -90,7 +90,7 @@ class RedditSubmissions(ManageSubmissions):
         with open("reddit_submissions.json", "r") as old_file:
             updated_file = json.load(old_file)
         with open("reddit_submissions.json", "w") as old_file:
-            for new_submission in self.submissions:
+            for new_submission in self.new_submissions:
                 if new_submission.link in [
                     submission["link"] for submission in updated_file
                 ]:
@@ -99,7 +99,8 @@ class RedditSubmissions(ManageSubmissions):
                     {
                         "author": new_submission.author,
                         "subject": new_submission.subject.strip(),
-                        "link": new_submission.link,
+                        "origin": new_submission.origin,
+                        "confirmation": new_submission.confirmation,
                         "created_utc": new_submission.created_utc,
                     }
                 )
@@ -113,7 +114,8 @@ class RedditSubmissions(ManageSubmissions):
     def notify_submitters(self) -> None:
         logging.info("Replying to submitters of new Reddit submissions...")
         submission_links = [
-            self.submissions[i].link for i in range(len(self.submissions))
+            self.new_submissions[i].link
+            for i in range(len(self.new_submissions))
         ]
         for i in submission_links:
             submission = self.REDDIT_API.comment(url=i)
@@ -129,6 +131,14 @@ class RedditSubmissions(ManageSubmissions):
             del updated_file[0]
             json.dump(updated_file, old_file, indent=2)
         logging.info("Removed selected submission from Reddit submissions")
+
+    @staticmethod
+    def verify_submissions() -> None:
+        with open("reddit_submissions.json", "r") as file:
+            if json.load(file) == []:
+                logging.info("List of Reddit submissions is empty")
+                logging.info("Shutting down...")
+                exit()
 
 
 class Prompt:
@@ -161,8 +171,13 @@ class Prompt:
 
     def generate_keywords(self) -> str:
         logging.info("Generating keywords...")
-        selected_keywords = random.choices(k.KEYWORDS, k=random.randint(2, 4))
+        with open("keywords.json", "r") as file:
+            keywords_list = json.load(file)
+        selected_keywords = random.choices(
+            keywords_list, k=random.randint(2, 4)
+        )
         selected_keywords = ", ".join(selected_keywords)
+        selected_keywords += ", 4k, 8k"
         logging.info("Keywords generated")
         return selected_keywords
 
@@ -207,13 +222,7 @@ class Art:
         return image.link
 
 
-class ManagePost(ABC):
-    @abstractmethod
-    def send(self):
-        pass
-
-
-class RedditPost(ManagePost):
+class RedditPost:
     def __init__(self, REDDIT_API: object, prompt: Prompt, art: Art) -> None:
         self.REDDIT_API = REDDIT_API
         self.prompt = prompt
@@ -224,14 +233,14 @@ class RedditPost(ManagePost):
         logging.info("Posting to Reddit...")
         try:
             self.REDDIT_API.subreddit("diffusedgallery").submit(
-                title=self.prompt.text,
+                title=self.prompt.subject,
                 flair_id=os.environ["REDDIT_FLAIR_ID"],
                 url=self.imgur_link,
             )
             for post in self.REDDIT_API.redditor("diffusedbrush").new(limit=1):
                 self.post_link = post
             logging.info(f"Posted to Reddit: http://redd.it/{self.post_link}/")
-            self.comment()
+            self.comment_post_info()
             self.approve()
             self.delete_subject()
             self.notify_author()
@@ -240,10 +249,11 @@ class RedditPost(ManagePost):
             logging.error("Error posting to Reddit, shutting down...")
             quit()
 
-    def comment(self) -> None:
+    def comment_post_info(self) -> None:
         logging.info("Commenting information on post...")
         text = [
-            f"**Idea By:** u/{self.prompt.author}\n\n",
+            f"**Subject Idea By:** u/{self.prompt.author}\n\n",
+            f"**Keywords Used:** {self.prompt.keywords}\n\n",
             f"**Original Submission:** {self.prompt.link}\n\n",
             "**Stable Diffusion Engine Settings:** \n\n",
             "* Engine: stable-diffusion-512-v2-1\n",
@@ -271,7 +281,7 @@ class RedditPost(ManagePost):
         logging.info("Notified author of subject use")
 
     def delete_subject(self) -> None:
-        RedditSubmissions.remove_submission()
+        ManageSubmissions.remove_submission()
 
 
 def main():
@@ -303,7 +313,7 @@ def main():
         logging.error("Error connecting to APIs, shutting down...")
         quit()
 
-    RedditSubmissions(REDDIT_API)
+    ManageSubmissions(REDDIT_API)
     selected_prompt = Prompt()
     generated_art = Art(STABILITY_API, IMGUR_API, selected_prompt)
     new_post = RedditPost(REDDIT_API, selected_prompt, generated_art)
