@@ -18,7 +18,6 @@ TODO:
 - [x] Change `keywords.py` to use a json file
 - [x] Check if submission files are empty
 - [ ] Store submission confirmation in a json file
-- [ ] Delete submission confirmation when post is made using subject
 - [ ] Feature that detects if post has been deleted, notify subject creator
 - [ ] Add safety filter
 - [ ] Implement CLI for GitHub Actions
