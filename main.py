@@ -31,8 +31,6 @@ class ManageSubmissions:
             self.store_submissions()
             self.notify_submitters()
         self.verify_submissions()
-        # self.gather_deleted_submissions()
-        # self.remove_deleted_submissions()
 
     def gather_submissions(self) -> list[Submission]:
         logging.info("Gathering submissions...")
@@ -101,18 +99,6 @@ class ManageSubmissions:
             submission.reply("⏰")
         logging.info("Replied to submitters of new submissions")
 
-    def gather_deleted_submissions(self) -> None:
-        logging.info("Gathering deleted submissions...")
-        with open("posts.json", "r") as file:
-            posts = json.load(file)
-        deleted_posts = []
-        for post in posts:
-            current_post = self.REDDIT_API.submission(id=post["id"])
-            if (current_post.author is None) and (
-                current_post.is_robot_indexable is False
-            ):
-                deleted_posts.append(current_post)
-
     @staticmethod
     def remove_submission() -> None:
         logging.info("Removing selected submission from submissions.json...")
@@ -138,7 +124,7 @@ class Prompt:
         self.keywords = self.generate_keywords()
         self.body = self.generate_prompt()
 
-    def prompt_info(self) -> tuple[str, str, str]:
+    def prompt_info(self) -> tuple[str]:
         logging.info("Getting oldest subject from submissions file...")
         with open("submissions.json", "r") as file:
             submissions = json.load(file)
@@ -245,7 +231,7 @@ class RedditPost:
             )
             for post in self.REDDIT_API.redditor("diffusedbrush").new(limit=1):
                 self.current_post = Post(
-                    author=post.author,
+                    author=str(post.author),
                     subject=self.prompt.subject,
                     prompt_link=self.prompt.link,
                     post_link=post.id,
@@ -260,8 +246,9 @@ class RedditPost:
             )
             self.approve()
             self.comment_post_info()
-            # self.delete_from_data()
+            self.delete_from_data()
             self.notify_author()
+            ManagePosts.store_post(self.current_post)
         except Exception as e:
             logging.error(e)
             logging.error("Error posting to Reddit, shutting down...")
@@ -301,23 +288,58 @@ class RedditPost:
         submission.reply(f"✅ http://redd.it/{self.current_post.post_link}/")
         logging.info("Notified author of subject use")
 
-    def store_post(self) -> None:
+
+class ManagePosts:
+    def __init__(self, REDDIT_API: praw.Reddit) -> None:
+        self.REDDIT_API = REDDIT_API
+        self.deleted_posts = self.gather_deleted_posts()
+        self.remove_deleted_posts()
+
+    @staticmethod
+    def store_post(post_to_save: Post) -> None:
         logging.info("Storing post information...")
         with open("posts.json", "r") as file:
             posts = json.load(file)
         posts.append(
             {
-                "author": self.current_post.author,
-                "subject": self.current_post.subject,
-                "prompt_link": self.current_post.prompt_link,
-                "post_link": self.current_post.post_link,
-                "imgur_link": self.current_post.imgur_link,
-                "created_utc": self.current_post.created_utc,
+                "author": post_to_save.author,
+                "subject": post_to_save.subject,
+                "prompt_link": post_to_save.prompt_link,
+                "post_link": f"http://redd.it/{post_to_save.post_link}/",
+                "imgur_link": post_to_save.imgur_link,
+                "created_utc": post_to_save.created_utc,
             }
+        )
+        posts = sorted(
+            posts,
+            key=lambda post: post["created_utc"],
         )
         with open("posts.json", "w") as file:
             json.dump(posts, file, indent=2)
         logging.info("Post information stored")
+
+    def gather_deleted_posts(self) -> list[dict]:
+        logging.info("Gathering deleted posts...")
+        deleted_posts = []
+        with open("posts.json", "r") as file:
+            posts = json.load(file)
+        for post in posts:
+            try:
+                self.REDDIT_API.submission(id=post["post_link"])
+            except Exception:
+                deleted_posts.append(post)
+        logging.info("Deleted posts gathered")
+        return deleted_posts
+
+    def remove_deleted_posts(self) -> None:
+        logging.info("Removing deleted posts...")
+        with open("posts.json", "r") as file:
+            posts = json.load(file)
+        for post in self.deleted_posts:
+            print(post)
+        with open("posts.json", "w") as file:
+            json.dump(posts, file, indent=2)
+        logging.info("Deleted posts removed")
 
 
 def main():
@@ -350,12 +372,12 @@ def main():
         quit()
 
     ManageSubmissions(REDDIT_API)
+    ManagePosts(REDDIT_API)
+    """
     selected_prompt = Prompt()
     generated_art = Art(STABILITY_API, IMGUR_API, selected_prompt.body)
     new_post = RedditPost(REDDIT_API, selected_prompt, generated_art)
     new_post.send_post()
-    """
-    new_post.store_post()
     """
     logging.info("BOT COMPLETED TASKS SUCCESSFULLY")
 
