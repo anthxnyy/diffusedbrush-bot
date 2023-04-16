@@ -29,8 +29,7 @@ class ManageSubmissions:
         self.new_submissions = self.gather_submissions()
         if len(self.new_submissions) > 0:
             self.store_submissions()
-            self.notify_submitters()
-        self.verify_submissions()
+            self.notify_saved_submitters()
 
     def gather_submissions(self) -> list[Submission]:
         logging.info("Gathering submissions...")
@@ -40,7 +39,7 @@ class ManageSubmissions:
             valid_comment = True
             if "SUBJECT: " in comment.body:
                 for reply in comment.replies:
-                    if ("⏰" in reply.body) or ("✅" in reply.body):
+                    if ("☑️" in reply.body) or ("✅" in reply.body):
                         valid_comment = False
                 if valid_comment:
                     valid_submissions.append(
@@ -88,7 +87,7 @@ class ManageSubmissions:
             json.dump(updated_file, old_file, indent=2)
         logging.info("New submissions stored")
 
-    def notify_submitters(self) -> None:
+    def notify_saved_submitters(self) -> None:
         logging.info("Replying to submitters of new submissions...")
         submission_links = [
             self.new_submissions[i].link
@@ -96,7 +95,7 @@ class ManageSubmissions:
         ]
         for i in submission_links:
             submission = self.REDDIT_API.comment(url=i)
-            submission.reply("⏰")
+            submission.reply("☑️")
         logging.info("Replied to submitters of new submissions")
 
     @staticmethod
@@ -117,6 +116,17 @@ class ManageSubmissions:
                 logging.info("Shutting down...")
                 exit()
 
+    @staticmethod
+    def notify_deleted_submitters(
+        REDDIT_API, deleted_posts: list[dict]
+    ) -> None:
+        logging.info("Replying to submitter(s) of deleted post(s)...")
+        for deleted_post in deleted_posts:
+            comment = REDDIT_API.comment(url=deleted_post["prompt_link"])
+            if comment.author is not None:
+                comment.reply("❌")
+        logging.info("Replied to submitter(s) of deleted post(s)")
+
 
 class Prompt:
     def __init__(self) -> None:
@@ -136,8 +146,9 @@ class Prompt:
 
     def generate_keywords(self) -> str:
         logging.info("Generating keywords...")
-        with open("keywords.json", "r") as file:
-            keywords_list = json.load(file)
+        with open("promptings.json", "r") as file:
+            promptings = json.load(file)
+            keywords_list = promptings["keywords"]
         selected_keywords = random.choices(
             keywords_list, k=random.randint(2, 4)
         )
@@ -169,25 +180,34 @@ class Art:
 
     def generate_art(self) -> None:
         logging.info("Creating art...")
-        try:
-            result = self.STABILITY_API.generate(
-                prompt=self.prompt,
-                steps=35,
-                cfg_scale=10,
-                width=512,
-                height=512,
-                samples=1,
-                guidance_preset=generation.GUIDANCE_PRESET_FAST_GREEN,
-            )
-        except Exception as e:
-            logging.error(e)
-            logging.error("Error creating art, shutting down...")
-            quit()
-        for resp in result:
-            for artifact in resp.artifacts:
-                if artifact.type == generation.ARTIFACT_IMAGE:
-                    sd_img = Image.open(io.BytesIO(artifact.binary))
-                    sd_img.save("sd_img.png")
+        with open("promptings.json", "r") as file:
+            promptings = json.load(file)
+            negative_prompts = promptings["negative_prompts"]
+        for attempt in range(3):
+            try:
+                result = self.STABILITY_API.generate(
+                    prompt=f"{self.prompt}, {negative_prompts}",
+                    steps=35,
+                    cfg_scale=10,
+                    width=512,
+                    height=512,
+                    samples=1,
+                    guidance_preset=generation.GUIDANCE_PRESET_FAST_GREEN,
+                )
+            except Exception as e:
+                logging.error(e)
+                logging.error("Error creating art, shutting down...")
+                quit()
+            for resp in result:
+                for artifact in resp.artifacts:
+                    if artifact.finish_reason == generation.FILTER:
+                        logging.critical(
+                            f"Art activated safety filter, retrying ({attempt}/3)..."  # noqa: E501
+                        )
+                        continue
+                    if artifact.type == generation.ARTIFACT_IMAGE:
+                        sd_img = Image.open(io.BytesIO(artifact.binary))
+                        sd_img.save("sd_img.png")
 
     def create_imgur(self) -> str:
         logging.info("Art created, creating Imgur link...")
@@ -220,30 +240,8 @@ class RedditPost:
         self.art = art
         self.current_post = None
         self.target = str
-
-    def send_post(self) -> None:
-        logging.info("Posting to Reddit...")
         try:
-            self.REDDIT_API.subreddit("diffusedgallery").submit(
-                title=self.prompt.subject,
-                flair_id=os.environ["REDDIT_FLAIR_ID"],
-                url=self.art.imgur_link,
-            )
-            for post in self.REDDIT_API.redditor("diffusedbrush").new(limit=1):
-                self.current_post = Post(
-                    author=str(post.author),
-                    subject=self.prompt.subject,
-                    prompt_link=self.prompt.link,
-                    post_link=post.id,
-                    imgur_link=self.art.imgur_link,
-                    created_utc=post.created_utc,
-                )
-            self.target = self.REDDIT_API.submission(
-                id=self.current_post.post_link
-            )
-            logging.info(
-                f"Posted: http://redd.it/{self.current_post.post_link}/"
-            )
+            self.send_post()
             self.approve()
             self.comment_post_info()
             self.delete_from_data()
@@ -253,6 +251,25 @@ class RedditPost:
             logging.error(e)
             logging.error("Error posting to Reddit, shutting down...")
             quit()
+
+    def send_post(self) -> None:
+        logging.info("Posting to Reddit...")
+        self.REDDIT_API.subreddit("diffusedgallery").submit(
+            title=self.prompt.subject,
+            flair_id=os.environ["REDDIT_FLAIR_ID"],
+            url=self.art.imgur_link,
+        )
+        for post in self.REDDIT_API.redditor("diffusedbrush").new(limit=1):
+            self.current_post = Post(
+                author=str(self.prompt.author),
+                subject=self.prompt.subject,
+                prompt_link=self.prompt.link,
+                post_link=post.id,
+                imgur_link=self.art.imgur_link,
+                created_utc=post.created_utc,
+            )
+        self.target = self.REDDIT_API.submission(id=self.current_post.post_link)
+        logging.info(f"Posted: http://redd.it/{self.current_post.post_link}/")
 
     def comment_post_info(self) -> None:
         logging.info("Commenting information on post...")
@@ -275,7 +292,6 @@ class RedditPost:
     def approve(self) -> None:
         logging.info("Approving post...")
         time.sleep(random.randint(10, 15))
-        print(self.current_post.post_link)
         self.target.mod.approve()
         logging.info("Post approved")
 
@@ -293,12 +309,16 @@ class ManagePosts:
     def __init__(self, REDDIT_API: praw.Reddit) -> None:
         self.REDDIT_API = REDDIT_API
         self.deleted_posts = self.gather_deleted_posts()
-        self.remove_deleted_posts()
+        if self.deleted_posts:
+            self.remove_deleted_posts()
+            ManageSubmissions.notify_deleted_submitters(
+                self.REDDIT_API, self.deleted_posts
+            )
 
     @staticmethod
     def store_post(post_to_save: Post) -> None:
         logging.info("Storing post information...")
-        with open("posts.json", "r") as file:
+        with open("live_posts.json", "r") as file:
             posts = json.load(file)
         posts.append(
             {
@@ -314,32 +334,42 @@ class ManagePosts:
             posts,
             key=lambda post: post["created_utc"],
         )
-        with open("posts.json", "w") as file:
+        with open("live_posts.json", "w") as file:
             json.dump(posts, file, indent=2)
         logging.info("Post information stored")
 
     def gather_deleted_posts(self) -> list[dict]:
         logging.info("Gathering deleted posts...")
         deleted_posts = []
-        with open("posts.json", "r") as file:
+        with open("live_posts.json", "r") as file:
             posts = json.load(file)
         for post in posts:
-            try:
-                self.REDDIT_API.submission(id=post["post_link"])
-            except Exception:
+            post_id = post["post_link"].split("/")[3]
+            test_post = self.REDDIT_API.submission(post_id)
+            if test_post.author is None:
                 deleted_posts.append(post)
-        logging.info("Deleted posts gathered")
-        return deleted_posts
+        if len(deleted_posts) != 0:
+            logging.info("Deleted post(s) gathered")
+            for i in range(len(deleted_posts)):
+                logging.info(
+                    f"Deleted post {i + 1} of {len(deleted_posts)}: {deleted_posts[i]['subject']}"  # noqa: E501
+                )
+            return deleted_posts
+        else:
+            logging.info("No deleted posts found")
+            return None
 
     def remove_deleted_posts(self) -> None:
         logging.info("Removing deleted posts...")
-        with open("posts.json", "r") as file:
+        with open("live_posts.json", "r") as file:
             posts = json.load(file)
-        for post in self.deleted_posts:
-            print(post)
-        with open("posts.json", "w") as file:
+        for deleted_post in self.deleted_posts:
+            for post in posts:
+                if post["post_link"] == deleted_post["post_link"]:
+                    posts.remove(post)
+        with open("live_posts.json", "w") as file:
             json.dump(posts, file, indent=2)
-        logging.info("Deleted posts removed")
+        logging.info("Deleted post(s) removed")
 
 
 def main():
@@ -348,7 +378,7 @@ def main():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         force=True,
     )
-    logging.info("STARTING BOT")
+    logging.critical("STARTING BOT")
 
     try:
         STABILITY_API = client.StabilityInference(
@@ -373,13 +403,11 @@ def main():
 
     ManageSubmissions(REDDIT_API)
     ManagePosts(REDDIT_API)
-    """
+    ManageSubmissions.verify_submissions()
     selected_prompt = Prompt()
     generated_art = Art(STABILITY_API, IMGUR_API, selected_prompt.body)
-    new_post = RedditPost(REDDIT_API, selected_prompt, generated_art)
-    new_post.send_post()
-    """
-    logging.info("BOT COMPLETED TASKS SUCCESSFULLY")
+    RedditPost(REDDIT_API, selected_prompt, generated_art)
+    logging.critical("BOT COMPLETED TASKS SUCCESSFULLY")
 
 
 # MAIN

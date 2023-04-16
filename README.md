@@ -17,9 +17,8 @@ TODO:
 - [x] Reddit post: Notify prompt creator when art is posted
 - [x] Change `keywords.py` to use a json file
 - [x] Check if submission files are empty
-- [ ] Store submission confirmation in a json file
-- [ ] Feature that detects if post has been deleted, notify subject creator
-- [ ] Add safety filter
+- [x] Feature that detects if post has been deleted, notify subject creator
+- [x] Add safety filter
 - [ ] Implement CLI for GitHub Actions
 - [ ] Automate using GitHub Actions
 - [ ] Create GitHub Action that uses the bot after a Discussion post submission is made
