@@ -19,11 +19,10 @@ TODO:
 - [x] Check if submission files are empty
 - [x] Feature that detects if post has been deleted, notify subject creator
 - [x] Add safety filter
+- [ ] Edit comments instead of creating new ones
 - [ ] Implement CLI for GitHub Actions
 - [ ] Automate using GitHub Actions
-- [ ] Create GitHub Action that uses the bot after a Discussion post submission is made
 - [ ] Write documentation and comments
-- [ ] Get trending topics to be used as subjects
+- [ ] Get trending topics to be used as subjects?
 - [ ] Use ChatGPT to generate prompts?
 - [ ] Improve use of keywords
-- [ ] Move from Stability API to ??? with better engine control and features

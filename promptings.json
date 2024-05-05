@@ -20,7 +20,7 @@
     "50mm portrait photography",
     "ultrarealistic",
     "award winning photo",
-    "80mm lense",
+    "80mm lens",
     "masterpeice",
     "breathtaking",
     "superb",
@@ -29,7 +29,8 @@
     "photoshop",
     "unreal engine",
     "hd",
-    "artstation"
+    "artstation",
+    "anime style"
   ],
-  "negative_prompts": "| lowres:-1.0, text:-1.0, error:-1.0, cropped:-1.0, worst quality:-1.0, low quality:-1.0, jpeg artifacts:-1.0, ugly:-1.0, duplicate:-1.0, morbid:-1.0, mutilated:-1.0, out of frame:-1.0, extra fingers:-1.0, mutated hands:-1.0, poorly drawn hands:-1.0, poorly drawn face:-1.0, mutation:-1.0, deformed:-1.0, blurry:-1.0, dehydrated:-1.0, bad anatomy:-1.0, bad proportions:-1.0, extra limbs:-1.0, cloned face:-1.0, disfigured:-1.0, gross proportions:-1.0, malformed limbs:-1.0, missing arms:-1.0, missing legs:-1.0, extra arms:-1.0, extra legs:-1.0, fused fingers:-1.0, too many fingers:-1.0, long neck:-1.0, username:-1.0, watermark:-1.0, signature:-1.0, human:-1.0, face:-1.0, animal:-1.0"
+  "negative_prompts": "| lowres:-1.0, text:-1.0, error:-1.0, cropped:-1.0, worst quality:-1.0, low quality:-1.0, jpeg artifacts:-1.0, ugly:-1.0, duplicate:-1.0, morbid:-1.0, mutilated:-1.0, out of frame:-1.0, extra fingers:-1.0, mutated hands:-1.0, poorly drawn hands:-1.0, poorly drawn face:-1.0, mutation:-1.0, deformed:-1.0, blurry:-1.0, dehydrated:-1.0, bad anatomy:-1.0, bad proportions:-1.0, extra limbs:-1.0, cloned face:-1.0, disfigured:-1.0, gross proportions:-1.0, malformed limbs:-1.0, missing arms:-1.0, missing legs:-1.0, extra arms:-1.0, extra legs:-1.0, fused fingers:-1.0, too many fingers:-1.0, long neck:-1.0, username:-1.0, watermark:-1.0, signature:-1.0"
 }
