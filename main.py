@@ -34,6 +34,7 @@ class ManageSubmissions:
         logging.info("Gathering submissions...")
         valid_submissions = []
         submission_source = self.REDDIT_API.submission("12qa1tu")
+        submission_source = self.REDDIT_API.submission("12qa1tu")
         for comment in submission_source.comments:
             valid_comment = True
             if "SUBJECT: " in comment.body:
@@ -46,6 +47,7 @@ class ManageSubmissions:
                             author=comment.author.name,
                             subject=comment.body.replace(
                                 "SUBJECT: ", ""
+                            ).strip(),  # noqa: E501
                             ).strip(),  # noqa: E501
                             link=f"https://reddit.com{comment.permalink}",
                             created_utc=comment.created_utc,
@@ -91,6 +93,7 @@ class ManageSubmissions:
         submission_links = [
             self.new_submissions[i].link
             for i in range(len(self.new_submissions))  # noqa: E501
+            for i in range(len(self.new_submissions))  # noqa: E501
         ]
         for i in submission_links:
             submission = self.REDDIT_API.comment(url=i)
@@ -98,6 +101,7 @@ class ManageSubmissions:
         logging.info("Replied to submitters of new submissions")
 
     @staticmethod
+    def remove_last_submission() -> None:
     def remove_last_submission() -> None:
         logging.info("Removing selected submission from submissions.json...")
         with open("submissions.json", "r") as old_file:
@@ -122,6 +126,15 @@ class ManageSubmissions:
             comment = REDDIT_API.comment(url=deleted_post["prompt_link"])
             if comment.author is not None:
                 comment.reply("❌")
+                logging.info(
+                    f"Replied to submitter of deleted post "
+                    f"({count + 1}/{len(deleted_posts)})"
+                )
+            else:
+                logging.info(
+                    f"Submitter of deleted post is deleted "
+                    f"({count + 1}/{len(deleted_posts)}"
+                )
                 logging.info(
                     f"Replied to submitter of deleted post "
                     f"({count + 1}/{len(deleted_posts)})"
@@ -160,6 +173,7 @@ class Prompt:
             keywords_list = promptings["keywords"]
         selected_keywords = random.choices(
             keywords_list, k=random.randint(2, 4)
+        )  # noqa: E501
         )  # noqa: E501
         selected_keywords = ", ".join(selected_keywords)
         selected_keywords += ", 4k, 8k"
@@ -243,7 +257,9 @@ class Post:
 class RedditPost:
     def __init__(
         self, REDDIT_FLAIR_ID, REDDIT_API: praw.Reddit, prompt: Prompt, art: Art
+        self, REDDIT_FLAIR_ID, REDDIT_API: praw.Reddit, prompt: Prompt, art: Art
     ) -> None:
+        self.REDDIT_FLAIR_ID = REDDIT_FLAIR_ID
         self.REDDIT_FLAIR_ID = REDDIT_FLAIR_ID
         self.REDDIT_API = REDDIT_API
         self.prompt = prompt
@@ -256,16 +272,24 @@ class RedditPost:
         ManageSubmissions.remove_last_submission()
         self.notify_author()
         ManagePosts.store_post(self.current_post)
+        self.send_post()
+        self.approve()
+        self.comment_post_info()
+        ManageSubmissions.remove_last_submission()
+        self.notify_author()
+        ManagePosts.store_post(self.current_post)
 
     def send_post(self) -> None:
         logging.info("Posting to Reddit...")
         self.REDDIT_API.subreddit("diffusedgallery").submit(
             title=self.prompt.subject,
             flair_id=self.REDDIT_FLAIR_ID,
+            flair_id=self.REDDIT_FLAIR_ID,
             url=self.art.imgur_link,
         )
         for post in self.REDDIT_API.redditor("diffusedbrush").new(limit=1):
             self.current_post = Post(
+                author=self.prompt.author,
                 author=self.prompt.author,
                 subject=self.prompt.subject,
                 prompt_link=self.prompt.link,
@@ -302,6 +326,14 @@ class RedditPost:
 
     def notify_author(self) -> str:
         logging.info("Notifying author of subject use...")
+        try:
+            submission = self.REDDIT_API.comment(
+                url=self.current_post.prompt_link
+            )  # noqa: E501
+            submission.reply(f"✅ http://redd.it/{self.current_post.post_link}/")
+        except Exception as e:
+            logging.error(e)
+            logging.error("Error notifying author, shutting down...")
         try:
             submission = self.REDDIT_API.comment(
                 url=self.current_post.prompt_link
@@ -361,6 +393,7 @@ class ManagePosts:
             for i in range(len(deleted_posts)):
                 logging.info(
                     f"Deleted post {i + 1}/{len(deleted_posts)}: {deleted_posts[i]['subject']}"  # noqa: E501
+                    f"Deleted post {i + 1}/{len(deleted_posts)}: {deleted_posts[i]['subject']}"  # noqa: E501
                 )
             return deleted_posts
         else:
@@ -397,7 +430,16 @@ def main():
             REDDIT_CLIENT_SECRET = keys["REDDIT_CLIENT_SECRET"]
             REDDIT_PASSWORD = keys["REDDIT_PASSWORD"]
             REDDIT_FLAIR_ID = keys["REDDIT_FLAIR_ID"]
+        with open("keys.json", "r") as file:
+            keys = json.load(file)
+            STABILITY_KEY = keys["STABILITY_KEY"]
+            IMGUR_CLIENT_ID = keys["IMGUR_CLIENT_ID"]
+            REDDIT_CLIENT_ID = keys["REDDIT_CLIENT_ID"]
+            REDDIT_CLIENT_SECRET = keys["REDDIT_CLIENT_SECRET"]
+            REDDIT_PASSWORD = keys["REDDIT_PASSWORD"]
+            REDDIT_FLAIR_ID = keys["REDDIT_FLAIR_ID"]
         STABILITY_API = client.StabilityInference(
+            key=STABILITY_KEY,
             key=STABILITY_KEY,
             engine="stable-diffusion-512-v2-1",
         )
@@ -406,10 +448,14 @@ def main():
             client_id=REDDIT_CLIENT_ID,
             client_secret=REDDIT_CLIENT_SECRET,
             password=REDDIT_PASSWORD,
+            client_id=REDDIT_CLIENT_ID,
+            client_secret=REDDIT_CLIENT_SECRET,
+            password=REDDIT_PASSWORD,
             user_agent="bot by u/diffusedbrush",
             username="diffusedbrush",
         )
         logging.info("Reddit API connected")
+        IMGUR_API = pyimgur.Imgur(IMGUR_CLIENT_ID)
         IMGUR_API = pyimgur.Imgur(IMGUR_CLIENT_ID)
         logging.info("Imgur API connected")
     except Exception as error:
