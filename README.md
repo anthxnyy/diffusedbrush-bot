@@ -1,4 +1,4 @@
-# DiffusedBrush Bot
+# DiffusedGallery and DiffusedBrush Bot
 
 ![GitHub repo file count](https://img.shields.io/github/directory-file-count/anthonytoyco/diffusedbrush-bot)
 ![GitHub repo size](https://img.shields.io/github/repo-size/anthonytoyco/diffusedbrush-bot)
