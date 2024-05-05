@@ -511,6 +511,16 @@ def main():
             quit()
 
 
+"""
+    ManageSubmissions(REDDIT_API)
+    ManagePosts(REDDIT_API)
+    ManageSubmissions.verify_submissions()
+    selected_prompt = Prompt()
+    generated_art = Art(STABILITY_API, IMGUR_API, selected_prompt.body)
+    RedditPost(REDDIT_FLAIR_ID, REDDIT_API, selected_prompt, generated_art)
+    logging.critical("BOT COMPLETED TASKS SUCCESSFULLY")
+"""
+
 # MAIN
 
 
